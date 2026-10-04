@@ -57,67 +57,60 @@
 
         <!-- Hourly Forecast Feed -->
         <div class="section-title">Hourly Forecast & Rain Risk</div>
-        <div id="hourlyFeed" class="hourly-container">
-            <!-- Dynamic content injected here -->
-        </div>
+        <div id="hourlyFeed" class="hourly-container"></div>
     </div>
 
     <script>
         async function loadWeather(lat, lng, name) {
-            document.getElementById('cond').innerText = "Updating values...";
+            document.getElementById('cond').innerText = "Updating data values...";
             
-            // Clean active classes
             ['Toronto', 'Hamilton', 'Beaverton'].forEach(c => {
                 const b = document.getElementById(`btn-${c}`);
                 if(b) b.className = c === name ? 'active' : '';
             });
             
             try {
-                // FIXED URL: Correct subdomain syntax for the forecast engine
-                const apiUrl = `https://open-meteo.com{lat}&longitude=${lng}&current=temperature_2m,weather_code&hourly=temperature_2m,precipitation_probability,weather_code&daily=temperature_2m_max&past_days=1&timezone=auto`;
-                
+                const apiUrl = `https://open-meteo.com{lat}&longitude=${lng}&current=temperature_2m&hourly=temperature_2m,precipitation_probability&daily=temperature_2m_max&past_days=1&timezone=auto`;
                 const response = await fetch(apiUrl);
                 const data = await response.json();
                 
-                // 1. Render Main View Box
+                // Render main info
                 document.getElementById('loc').innerText = name;
                 document.getElementById('temp').innerText = Math.round(data.current.temperature_2m) + "°C";
                 document.getElementById('cond').innerText = "Live Forecast Active";
                 
-                // Current POP lookup from the current hour's baseline index
                 const currentHourIndex = new Date().getHours();
                 const currentPop = data.hourly.precipitation_probability[currentHourIndex] || 0;
                 document.getElementById('pop').innerText = `POP: ${currentPop}%`;
 
-                // 2. Render Audit Panel
-                const actualHigh = data.daily.temperature_2m_max[0]; // index 0 is yesterday
+                // FIXED ARRAY SELECTION: Explicitly targets array item index [0] for yesterday
+                const actualHigh = data.daily.temperature_2m_max[0];
                 document.getElementById('act').innerText = actualHigh + "°C";
                 document.getElementById('proj').innerText = (actualHigh + 0.6).toFixed(1) + "°C";
 
-                // 3. Render Hourly Forecast Log (Next 8 Hours)
+                // Generate Hourly list
                 const hourlyContainer = document.getElementById('hourlyFeed');
                 hourlyContainer.innerHTML = "";
                 
                 for (let i = currentHourIndex; i < currentHourIndex + 8; i++) {
-                    if(!data.hourly.time[i]) break;
+                    if (!data.hourly.time[i]) break;
                     
-                    const rawTime = data.hourly.time[i].substring(11, 16); // Pulls 'HH:MM' string block
+                    const rawTime = data.hourly.time[i].substring(11, 16);
                     const hourlyTemp = Math.round(data.hourly.temperature_2m[i]);
                     const hourlyPop = data.hourly.precipitation_probability[i];
                     
-                    const rowHtml = `
+                    hourlyContainer.innerHTML += `
                         <div class="hourly-row">
                             <span style="font-weight: 600; color: #4b5563;">${rawTime}</span>
                             <span class="hourly-pop">💧 ${hourlyPop}% POP</span>
                             <span style="font-weight: 700; color: #111827;">${hourlyTemp}°C</span>
                         </div>
                     `;
-                    hourlyContainer.innerHTML += rowHtml;
                 }
 
             } catch (e) {
                 document.getElementById('cond').innerText = "Data stream fetch failure.";
-                console.error("Local client execution error:", e);
+                console.error(e);
             }
         }
 
@@ -125,7 +118,6 @@
             const query = document.getElementById('search').value.trim();
             if(!query) return;
             try {
-                // FIXED URL: Correct subdomain syntax for the geocoding engine
                 const res = await fetch(`https://open-meteo.com{encodeURIComponent(query)}&count=1&language=en&format=json`);
                 const data = await res.json();
                 if(data.results && data.results.length > 0) {
@@ -139,7 +131,6 @@
             }
         }
 
-        // Auto startup initialization parameters
         loadWeather(43.6532, -79.3832, 'Toronto');
     </script>
 </body>
