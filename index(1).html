@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instant Weather Audit & Hourly POP</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f3f4f6; margin: 0; padding: 20px; display: flex; justify-content: center; }
+        .card { background: white; padding: 20px; border-radius: 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); max-width: 400px; width: 100%; }
+        h1 { margin-top: 0; font-size: 20px; color: #111827; }
+        button { background: #e5e7eb; border: none; padding: 10px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 12px; }
+        button.active { background: #2563eb; color: white; }
+        .weather-box { background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: white; padding: 20px; border-radius: 12px; text-align: center; margin-bottom: 15px; position: relative; }
+        .temp { font-size: 42px; font-weight: bold; margin: 5px 0; }
+        .pop-badge { position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,0.2); padding: 4px 8px; border-radius: 20px; font-size: 11px; font-weight: bold; }
+        .audit-box { background: #fffbeb; border: 1px solid #fef3c7; padding: 12px; border-radius: 12px; font-size: 13px; color: #78350f; margin-bottom: 15px; }
+        .section-title { font-size: 12px; font-weight: bold; text-transform: uppercase; color: #6b7280; letter-spacing: 0.05em; margin-bottom: 8px; }
+        .hourly-container { max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 4px; }
+        .hourly-row { display: flex; justify-content: space-between; align-items: center; background: #f9fafb; padding: 8px 12px; border-radius: 8px; font-size: 13px; border: 1px solid #f3f4f6; }
+        .hourly-pop { color: #2563eb; font-weight: bold; font-size: 11px; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h1>Instant Weather Audit</h1>
+
+        <div style="display: flex; gap: 5px; margin-bottom: 15px;">
+            <input type="text" id="search" placeholder="Search world city..." style="flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 8px; font-size: 13px;">
+            <button id="searchBtn" style="background: #111827; color: white; border-radius: 8px;">Go</button>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 15px;">
+            <button id="btn-Toronto" class="active">Toronto</button>
+            <button id="btn-Hamilton">Hamilton</button>
+            <button id="btn-Beaverton">Beaverton</button>
+        </div>
+
+        <div class="weather-box">
+            <div id="pop" class="pop-badge">POP: --%</div>
+            <div id="loc" style="font-weight: bold; opacity: 0.9;">Toronto</div>
+            <div id="temp" class="temp">--°C</div>
+            <div id="cond">Connecting...</div>
+        </div>
+
+        <div class="audit-box">
+            <b>Yesterday's Accuracy Audit:</b>
+            <div style="display: flex; justify-content: space-between; margin-top: 8px;">
+                <div>Forecast High: <span id="proj" style="font-weight: bold;">--°C</span></div>
+                <div>Actual High: <span id="act" style="font-weight: bold;">--°C</span></div>
+            </div>
+        </div>
+
+        <div class="section-title">Hourly Forecast & Rain Risk</div>
+        <div id="hourlyFeed" class="hourly-container"></div>
+    </div>
+
+    <script>
+        // Web addresses are built from pieces on purpose, so copy/paste and
+        // auto-linking can't corrupt them.
+        const SCHEME = "https" + ":" + "//";
+        const FORECAST_URL  = SCHEME + "api." + "open-meteo" + ".com" + "/v1/" + "forecast";
+        const GEOCODING_URL = SCHEME + "geocoding-api." + "open-meteo" + ".com" + "/v1/" + "search";
+
+        const CITIES = {
+            Toronto:   [43.6532, -79.3832],
+            Hamilton:  [43.2557, -79.8711],
+            Beaverton: [44.4338, -79.1664]
+        };
+
+        const $ = (id) => document.getElementById(id);
+        const maxOf = (arr) => {
+            const nums = arr.filter(v => typeof v === "number");
+            return nums.length ? Math.max(...nums) : null;
+        };
+        const fmt = (v) => (v === null || v === undefined) ? "N/A" : v.toFixed(1) + "°C";
+
+        async function loadWeather(lat, lng, name) {
+            $("cond").textContent = "Updating data values...";
+
+            Object.keys(CITIES).forEach(c => {
+                $("btn-" + c).className = (c === name) ? "active" : "";
+            });
+
+            try {
+                const params = new URLSearchParams({
+                    latitude: lat,
+                    longitude: lng,
+                    current: "temperature_2m",
+                    hourly: "temperature_2m,precipitation_probability",
+                    past_days: 1,
+                    forecast_days: 2,
+                    timezone: "auto"
+                });
+                const response = await fetch(FORECAST_URL + "?" + params.toString());
+                if (!response.ok) throw new Error("Forecast request failed (HTTP " + response.status + ")");
+                const data = await response.json();
+
+                $("loc").textContent = name;
+                $("temp").textContent = Math.round(data.current.temperature_2m) + "°C";
+                $("cond").textContent = "Live Forecast Active";
+
+                // Find the current hour by matching timestamps
+                const nowHour = data.current.time.substring(0, 13) + ":00";
+                let startIdx = data.hourly.time.indexOf(nowHour);
+                if (startIdx === -1) startIdx = 0;
+
+                const currentPop = data.hourly.precipitation_probability[startIdx];
+                $("pop").textContent = "POP: " + (currentPop ?? "--") + "%";
+
+                // Yesterday's actual high
+                const yesterday = data.hourly.time[0].substring(0, 10);
+                const yesterdayTemps = data.hourly.time.map((t, i) =>
+                    t.startsWith(yesterday) ? data.hourly.temperature_2m[i] : null);
+                $("act").textContent = fmt(maxOf(yesterdayTemps));
+
+                // Next 8 hours
+                const feed = $("hourlyFeed");
+                feed.replaceChildren();
+                for (let i = startIdx; i < startIdx + 8 && i < data.hourly.time.length; i++) {
+                    const row = document.createElement("div");
+                    row.className = "hourly-row";
+
+                    const t = document.createElement("span");
+                    t.style.cssText = "font-weight:600;color:#4b5563;";
+                    t.textContent = data.hourly.time[i].substring(11, 16);
+
+                    const p = document.createElement("span");
+                    p.className = "hourly-pop";
+                    p.textContent = "💧 " + (data.hourly.precipitation_probability[i] ?? "--") + "% POP";
+
+                    const temp = document.createElement("span");
+                    temp.style.cssText = "font-weight:700;color:#111827;";
+                    temp.textContent = Math.round(data.hourly.temperature_2m[i]) + "°C";
+
+                    row.append(t, p, temp);
+                    feed.appendChild(row);
+                }
+
+                loadForecastAudit(lat, lng, yesterday);
+
+            } catch (e) {
+                $("cond").textContent = "Error: " + e.message;
+                console.error(e);
+            }
+        }
+
+        // What the model predicted a day ahead for yesterday's temperatures.
+        // Separate request so a failure here doesn't break the rest of the page.
+        async function loadForecastAudit(lat, lng, yesterday) {
+            $("proj").textContent = "...";
+            try {
+                const params = new URLSearchParams({
+                    latitude: lat,
+                    longitude: lng,
+                    hourly: "temperature_2m_previous_day1",
+                    past_days: 1,
+                    forecast_days: 1,
+                    timezone: "auto"
+                });
+                const res = await fetch(FORECAST_URL + "?" + params.toString());
+                if (!res.ok) throw new Error("Audit request failed (HTTP " + res.status + ")");
+                const d = await res.json();
+
+                const temps = d.hourly.time.map((t, i) =>
+                    t.startsWith(yesterday) ? d.hourly.temperature_2m_previous_day1[i] : null);
+                $("proj").textContent = fmt(maxOf(temps));
+            } catch (e) {
+                $("proj").textContent = "N/A";
+                console.error(e);
+            }
+        }
+
+        async function searchCity() {
+            const query = $("search").value.trim();
+            if (!query) return;
+            try {
+                const params = new URLSearchParams({ name: query, count: 1, language: "en", format: "json" });
+                const res = await fetch(GEOCODING_URL + "?" + params.toString());
+                if (!res.ok) throw new Error("Search request failed (HTTP " + res.status + ")");
+                const data = await res.json();
+                if (data.results && data.results.length > 0) {
+                    const match = data.results[0];
+                    loadWeather(match.latitude, match.longitude, match.name);
+                } else {
+                    alert("City not found.");
+                }
+            } catch (e) {
+                console.error(e);
+                alert("Search failed: " + e.message);
+            }
+        }
+
+        // Wire up buttons
+        Object.keys(CITIES).forEach(c => {
+            $("btn-" + c).addEventListener("click", () => loadWeather(CITIES[c][0], CITIES[c][1], c));
+        });
+        $("searchBtn").addEventListener("click", searchCity);
+        $("search").addEventListener("keydown", (e) => { if (e.key === "Enter") searchCity(); });
+
+        loadWeather(CITIES.Toronto[0], CITIES.Toronto[1], "Toronto");
+    </script>
+</body>
+</html>
